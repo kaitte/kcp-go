@@ -979,7 +979,7 @@ func (l *Listener) closeSession(remote net.Addr) (ret bool) {
 func (l *Listener) Addr() net.Addr { return l.conn.LocalAddr() }
 
 // Listen listens for incoming KCP packets addressed to the local address laddr on the network "udp",
-func Listen(laddr string) (net.Listener, error) { return ListenWithOptions(laddr, nil, 0, 0) }
+func Listen(laddr string) (net.Listener, error) { return ListenWithOptions(laddr, nil, 0, 0,false,"") }
 
 // ListenWithOptions listens for incoming KCP packets addressed to the local address laddr on the network "udp" with packet encryption.
 //
@@ -988,15 +988,28 @@ func Listen(laddr string) (net.Listener, error) { return ListenWithOptions(laddr
 // 'dataShards', 'parityShards' specify how many parity packets will be generated following the data packets.
 //
 // Check https://github.com/klauspost/reedsolomon for details
-func ListenWithOptions(laddr string, block BlockCrypt, dataShards, parityShards int) (*Listener, error) {
+func ListenWithOptions(laddr string, block BlockCrypt, dataShards, parityShards int,reuseport bool,link string) (*Listener, error) {
 	udpaddr, err := net.ResolveUDPAddr("udp", laddr)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	conn, err := net.ListenUDP("udp", udpaddr)
-	if err != nil {
-		return nil, errors.WithStack(err)
+
+	var conn net.PacketConn
+	if reuseport{
+		if link == ""{
+			return nil, errors.New("not link")
+		}
+		conn, err = ListenPacket(link,"udp", laddr)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+	}else{
+		conn, err = net.ListenUDP("udp", udpaddr)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
 	}
+
 
 	return serveConn(block, dataShards, parityShards, conn, true)
 }
@@ -1023,7 +1036,7 @@ func serveConn(block BlockCrypt, dataShards, parityShards int, conn net.PacketCo
 }
 
 // Dial connects to the remote address "raddr" on the network "udp" without encryption and FEC
-func Dial(raddr string) (net.Conn, error) { return DialWithOptions(raddr, nil, 0, 0) }
+func Dial(raddr string) (net.Conn, error) { return DialWithOptions(raddr, nil, 0, 0,false,"","") }
 
 // DialWithOptions connects to the remote address "raddr" on the network "udp" with packet encryption
 //
@@ -1032,7 +1045,7 @@ func Dial(raddr string) (net.Conn, error) { return DialWithOptions(raddr, nil, 0
 // 'dataShards', 'parityShards' specify how many parity packets will be generated following the data packets.
 //
 // Check https://github.com/klauspost/reedsolomon for details
-func DialWithOptions(raddr string, block BlockCrypt, dataShards, parityShards int) (*UDPSession, error) {
+func DialWithOptions(raddr string, block BlockCrypt, dataShards, parityShards int,reuseport bool,link string,laddr string) (*UDPSession, error) {
 	// network type detection
 	udpaddr, err := net.ResolveUDPAddr("udp", raddr)
 	if err != nil {
@@ -1043,9 +1056,20 @@ func DialWithOptions(raddr string, block BlockCrypt, dataShards, parityShards in
 		network = "udp"
 	}
 
-	conn, err := net.ListenUDP(network, nil)
-	if err != nil {
-		return nil, errors.WithStack(err)
+	var conn net.PacketConn
+	if reuseport{
+		if link == ""{
+			return nil, errors.New("not link")
+		}
+		conn, err = ListenPacket(link,"udp", laddr)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+	}else{
+		conn, err = net.ListenUDP(network, nil)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
 	}
 
 	var convid uint32
